@@ -2,6 +2,7 @@ import streamlit as st
 import anthropic
 import time
 import hashlib
+from datetime import datetime
 
 from auth import (
     get_google_auth_url, handle_oauth_callback,
@@ -26,16 +27,13 @@ st.set_page_config(
 )
 
 # ==============================================================
-# CSS — 채팅 UI 스타일
+# CSS
 # ==============================================================
 st.markdown("""
 <style>
-    /* 배경 */
     .stApp {
         background: linear-gradient(160deg, #0a0a1a 0%, #1a1a3e 50%, #0d0d2b 100%);
     }
-
-    /* 헤더 */
     .app-header {
         text-align: center;
         padding: 1rem 0 0.3rem;
@@ -51,15 +49,11 @@ st.markdown("""
         font-size: 0.9rem;
         margin: 0.2rem 0 0;
     }
-
-    /* 채팅 컨테이너 */
     .chat-container {
         max-width: 900px;
         margin: 0 auto;
         padding: 0 1rem;
     }
-
-    /* 사용자 메시지 */
     .msg-user {
         display: flex;
         justify-content: flex-end;
@@ -76,16 +70,6 @@ st.markdown("""
         word-break: break-word;
         box-shadow: 0 2px 12px rgba(99,102,241,0.3);
     }
-    .msg-user .bubble .file-tag {
-        display: inline-block;
-        background: rgba(255,255,255,0.2);
-        padding: 0.15rem 0.5rem;
-        border-radius: 6px;
-        font-size: 0.78rem;
-        margin-bottom: 0.3rem;
-    }
-
-    /* AI 메시지 */
     .msg-ai {
         display: flex;
         justify-content: flex-start;
@@ -128,8 +112,6 @@ st.markdown("""
         overflow-x: auto;
         margin: 0.5rem 0;
     }
-
-    /* 사용량 바 */
     .usage-bar {
         display: flex;
         gap: 1.5rem;
@@ -145,16 +127,11 @@ st.markdown("""
         color: #c7d2fe;
         font-weight: 700;
     }
-
-    /* 환영 화면 */
     .welcome-box {
         text-align: center;
         padding: 4rem 2rem;
     }
-    .welcome-box .icon {
-        font-size: 4rem;
-        margin-bottom: 1rem;
-    }
+    .welcome-box .icon { font-size: 4rem; margin-bottom: 1rem; }
     .welcome-box h2 {
         color: #fff;
         font-size: 1.5rem;
@@ -175,10 +152,7 @@ st.markdown("""
         margin: 0.3rem;
         color: #a5b4fc;
         font-size: 0.88rem;
-        cursor: default;
     }
-
-    /* 로그인 카드 */
     .login-card {
         max-width: 400px;
         margin: 5rem auto;
@@ -187,7 +161,6 @@ st.markdown("""
         border-radius: 24px;
         padding: 3rem 2rem;
         text-align: center;
-        backdrop-filter: blur(12px);
     }
     .login-card h2 { color: #fff; font-size: 1.6rem; }
     .login-card p { color: #8892b0; margin: 0.5rem 0 1.5rem; }
@@ -200,29 +173,38 @@ st.markdown("""
         text-decoration: none;
         font-weight: 700;
         font-size: 1rem;
-        transition: all 0.2s;
         box-shadow: 0 2px 10px rgba(0,0,0,0.2);
     }
-    .google-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    .session-item {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 10px;
+        padding: 0.5rem 0.8rem;
+        margin-bottom: 0.4rem;
+        color: #c7d2fe;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: all 0.2s;
     }
-
-    /* 사이드바 */
+    .session-item:hover {
+        background: rgba(99,102,241,0.15);
+        border-color: rgba(99,102,241,0.3);
+    }
+    .session-active {
+        background: rgba(99,102,241,0.2) !important;
+        border-color: #6366f1 !important;
+        color: #fff !important;
+    }
     section[data-testid="stSidebar"] {
         background: rgba(10, 10, 26, 0.97);
         border-right: 1px solid rgba(255,255,255,0.06);
     }
     section[data-testid="stSidebar"] .stMarkdown { color: #e2e8f0; }
-
-    /* 버튼 */
     .stButton > button {
         border-radius: 12px;
         font-weight: 600;
         transition: all 0.2s;
     }
-
-    /* 입력 필드 */
     .stTextArea textarea, .stTextInput input {
         background: rgba(255,255,255,0.06) !important;
         border: 1px solid rgba(255,255,255,0.12) !important;
@@ -233,23 +215,7 @@ st.markdown("""
         border-color: #6366f1 !important;
         box-shadow: 0 0 0 2px rgba(99,102,241,0.25) !important;
     }
-
-    /* 구분선 */
     hr { border-color: rgba(255,255,255,0.06); }
-
-    /* 튜닝 아이템 */
-    .tuning-chip {
-        display: inline-block;
-        background: rgba(99,102,241,0.15);
-        border: 1px solid rgba(99,102,241,0.3);
-        color: #c7d2fe;
-        padding: 0.3rem 0.8rem;
-        border-radius: 20px;
-        font-size: 0.82rem;
-        margin: 0.2rem;
-    }
-
-    /* 스크롤바 */
     ::-webkit-scrollbar { width: 6px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 3px; }
@@ -326,23 +292,23 @@ uid, uname, uemail = user["id"], user["name"], user["email"]
 upic = user.get("picture", "")
 upsert_user(uid, uemail, uname, upic)
 
+# --- 핵심: 처음 접속 시 자동으로 새 대화 생성 ---
+if "app_initialized" not in st.session_state:
+    # 새 대화방 이름 = 현재 날짜+시간
+    new_session = datetime.now().strftime("%Y-%m-%d %H:%M")
+    st.session_state.current_session = new_session
+    st.session_state.messages = []
+    st.session_state.last_usage = None
+    st.session_state.app_initialized = True
+
+# 기본값 보장
 for k, v in {
     "messages": [],
-    "current_session": "default",
-    "pending_files": [],
+    "current_session": datetime.now().strftime("%Y-%m-%d %H:%M"),
     "last_usage": None,
 }.items():
     if k not in st.session_state:
         st.session_state[k] = v
-
-# 처음 로드 시 DB에서 대화 불러오기
-if not st.session_state.messages:
-    saved = load_conversations(uid, st.session_state.current_session)
-    if saved:
-        st.session_state.messages = [
-            {"role": m["role"], "content": m["content"],
-             "display": m["content"]} for m in saved
-        ]
 
 # ==============================================================
 # 사이드바
@@ -355,6 +321,9 @@ with st.sidebar:
     st.caption(uemail)
     if st.button("🚪 로그아웃", use_container_width=True):
         logout()
+        for k in list(st.session_state.keys()):
+            if k != "user":
+                del st.session_state[k]
         st.rerun()
 
     st.markdown("---")
@@ -366,51 +335,57 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # 대화방 관리
-    st.markdown("**💬 대화방**")
-    sessions = get_user_sessions(uid)
-    if st.session_state.current_session not in sessions:
-        sessions.append(st.session_state.current_session)
-        sessions.sort()
-
-    cur_session = st.selectbox(
-        "대화방 선택", sessions,
-        index=sessions.index(st.session_state.current_session),
-        label_visibility="collapsed",
-    )
-    if cur_session != st.session_state.current_session:
-        st.session_state.current_session = cur_session
-        saved = load_conversations(uid, cur_session)
-        st.session_state.messages = [
-            {"role": m["role"], "content": m["content"],
-             "display": m["content"]} for m in saved
-        ]
+    # ✨ 새 대화 버튼 (눈에 잘 띄게)
+    if st.button("✨ 새 대화 시작", use_container_width=True, type="primary"):
+        new_session = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state.current_session = new_session
+        st.session_state.messages = []
         st.session_state.last_usage = None
         st.rerun()
 
-    col_a, col_b = st.columns(2)
-    with col_a:
-        new_room = st.text_input("새 대화방", label_visibility="collapsed", placeholder="이름 입력")
-    with col_b:
-        if st.button("➕", use_container_width=True) and new_room.strip():
-            st.session_state.current_session = new_room.strip()
-            st.session_state.messages = []
-            st.session_state.last_usage = None
-            st.rerun()
+    st.markdown("---")
 
-    col_c, col_d = st.columns(2)
-    with col_c:
-        if st.button("🗑️ 삭제", use_container_width=True):
-            delete_session(uid, st.session_state.current_session)
-            st.session_state.current_session = "default"
-            st.session_state.messages = []
-            st.rerun()
-    with col_d:
-        if st.button("🧹 비우기", use_container_width=True):
-            delete_session(uid, st.session_state.current_session)
-            st.session_state.messages = []
-            st.session_state.last_usage = None
-            st.rerun()
+    # 이전 대화 목록
+    st.markdown("**📂 이전 대화 기록**")
+
+    sessions = get_user_sessions(uid)
+    # 현재 세션이 목록에 없으면 추가
+    if st.session_state.current_session not in sessions:
+        sessions.append(st.session_state.current_session)
+    # 최신순 정렬
+    sessions.sort(reverse=True)
+
+    if len(sessions) == 0 or (len(sessions) == 1 and sessions[0] == "default"):
+        st.caption("아직 대화 기록이 없어요")
+    else:
+        for sess in sessions:
+            # 현재 선택된 대화인지 표시
+            if sess == st.session_state.current_session:
+                label = f"💬 **{sess}** (현재)"
+            else:
+                label = f"📝 {sess}"
+
+            col_s, col_d = st.columns([4, 1])
+            with col_s:
+                if st.button(label, key=f"sess_{sess}", use_container_width=True):
+                    if sess != st.session_state.current_session:
+                        st.session_state.current_session = sess
+                        # DB에서 대화 기록 로드
+                        saved = load_conversations(uid, sess)
+                        st.session_state.messages = [
+                            {"role": m["role"], "content": m["content"],
+                             "display": m["content"]} for m in saved
+                        ]
+                        st.session_state.last_usage = None
+                        st.rerun()
+            with col_d:
+                if st.button("🗑", key=f"del_{sess}"):
+                    delete_session(uid, sess)
+                    if sess == st.session_state.current_session:
+                        new_s = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                        st.session_state.current_session = new_s
+                        st.session_state.messages = []
+                    st.rerun()
 
     st.markdown("---")
 
@@ -421,12 +396,13 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # AI 튜닝 (사이드바에서 바로)
+    # AI 튜닝
     with st.expander("🎯 AI 튜닝 설정"):
         st.markdown("**프로필**")
         profile_data = {d["key"]: d["value"] for d in load_tuning(uid, "profile")}
-        for field, ph in [("학년","2학년"),("관심과목","수학,물리"),("진로","컴공"),("수준","수학 상위")]:
-            val = st.text_input(field, value=profile_data.get(field,""),
+        for field, ph in [("학년", "2학년"), ("관심과목", "수학,물리"),
+                          ("진로", "컴공"), ("수준", "수학 상위")]:
+            val = st.text_input(field, value=profile_data.get(field, ""),
                                 placeholder=ph, key=f"t_p_{field}")
             if val.strip() != profile_data.get(field, ""):
                 if val.strip():
@@ -437,9 +413,9 @@ with st.sidebar:
         st.markdown("**답변 스타일**")
         pref_data = {d["key"]: d["value"] for d in load_tuning(uid, "preference")}
         for key, opts in [
-            ("설명방식", ["쉽고 친근","학술적","예시 위주","단계별"]),
-            ("답변길이", ["짧게","적당히","상세하게"]),
-            ("말투", ["반말","존댓말","이모지"]),
+            ("설명방식", ["쉽고 친근", "학술적", "예시 위주", "단계별"]),
+            ("답변길이", ["짧게", "적당히", "상세하게"]),
+            ("말투", ["반말", "존댓말", "이모지"]),
         ]:
             cur = pref_data.get(key, opts[0])
             idx = opts.index(cur) if cur in opts else 0
@@ -452,13 +428,14 @@ with st.sidebar:
         for item in ci_data:
             cc1, cc2 = st.columns([4, 1])
             with cc1:
-                st.caption(f"⚡ {item['value'][:50]}...")
+                st.caption(f"⚡ {item['value'][:50]}")
             with cc2:
                 if st.button("✕", key=f"dci_{item['key']}"):
                     delete_tuning(uid, "custom_instruction", item["key"])
                     st.rerun()
 
-        new_ci = st.text_input("지시 추가", placeholder="예: 공식을 먼저 정리해줘", key="new_ci_input")
+        new_ci = st.text_input("지시 추가", placeholder="예: 공식을 먼저 정리해줘",
+                               key="new_ci_input")
         if st.button("추가", key="add_ci_btn") and new_ci.strip():
             save_tuning(uid, "custom_instruction",
                         hashlib.md5(new_ci.encode()).hexdigest()[:8], new_ci.strip())
@@ -469,12 +446,12 @@ with st.sidebar:
         flist = get_user_files(uid, 10)
         if flist:
             for f in flist:
-                st.caption(f"📎 {f['filename']} ({fmt_size(f.get('file_size',0))})")
+                st.caption(f"📎 {f['filename']} ({fmt_size(f.get('file_size', 0))})")
         else:
             st.caption("아직 없음")
 
 # ==============================================================
-# 메인 영역
+# 메인 영역 - 헤더
 # ==============================================================
 st.markdown(f"""
 <div class="app-header">
@@ -490,21 +467,21 @@ chat_area = st.container()
 
 with chat_area:
     if not st.session_state.messages:
-        # 환영 메시지
         st.markdown("""
         <div class="welcome-box">
             <div class="icon">💬</div>
-            <h2>무엇이든 물어보세요!</h2>
-            <p>학습 관련 질문, 파일 분석, 문제 풀이 등<br>무엇이든 도와드릴게요.</p>
+            <h2>새 대화가 시작되었어요!</h2>
+            <p>학습 관련 질문, 파일 분석, 문제 풀이 등<br>무엇이든 물어보세요.</p>
             <br>
             <div class="hint">📐 수학 문제 풀이</div>
             <div class="hint">📖 영어 지문 해석</div>
             <div class="hint">🔬 과학 개념 설명</div>
             <div class="hint">📄 파일 분석</div>
+            <br><br>
+            <p style="font-size:0.85rem;">💡 이전 대화를 이어하고 싶으면<br>왼쪽 사이드바에서 대화 기록을 선택하세요!</p>
         </div>
         """, unsafe_allow_html=True)
     else:
-        # 대화 기록
         st.markdown('<div class="chat-container">', unsafe_allow_html=True)
         for msg in st.session_state.messages:
             if msg["role"] == "user":
@@ -523,7 +500,7 @@ with chat_area:
                 """, unsafe_allow_html=True)
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # 마지막 사용량 표시
+    # 사용량 바
     if st.session_state.last_usage:
         u = st.session_state.last_usage
         st.markdown(f"""
@@ -543,8 +520,8 @@ st.markdown("---")
 # 파일 업로드
 uploaded_files = st.file_uploader(
     "📎 파일 첨부",
-    type=["jpg","jpeg","png","gif","webp","pdf","docx","xlsx",
-          "txt","csv","md","json","py","js","html","css","java","c","cpp"],
+    type=["jpg", "jpeg", "png", "gif", "webp", "pdf", "docx", "xlsx",
+          "txt", "csv", "md", "json", "py", "js", "html", "css", "java", "c", "cpp"],
     accept_multiple_files=True,
     label_visibility="collapsed",
     key="file_uploader",
@@ -554,13 +531,13 @@ if uploaded_files:
     file_names = [f"📎 {f.name}" for f in uploaded_files]
     st.caption(" · ".join(file_names))
 
-# 질문 입력 + 전송 버튼
+# 입력 + 전송
 col_input, col_send = st.columns([6, 1])
 
 with col_input:
     question = st.text_area(
         "메시지 입력",
-        placeholder="메시지를 입력하세요... (Shift+Enter로 줄바꿈)",
+        placeholder="메시지를 입력하세요...",
         height=80,
         label_visibility="collapsed",
         key="user_input",
@@ -583,7 +560,8 @@ if send and (question.strip() or uploaded_files):
                     f.seek(0)
                     result = process_file(f)
                     file_results.append(result)
-                    save_file_meta(uid, f.name, f.type or "", f.size, result[1][:50000])
+                    save_file_meta(uid, f.name, f.type or "", f.size,
+                                   result[1][:50000])
 
             # Claude 메시지 구성
             content_blocks = []
@@ -601,11 +579,11 @@ if send and (question.strip() or uploaded_files):
             combined = "\n\n".join(text_parts) if text_parts else "첨부 파일을 분석해주세요."
             content_blocks.append({"type": "text", "text": combined})
 
-            # 표시용 텍스트
+            # 표시용
             display = question.strip()
             if file_results:
-                tags = " ".join(f'<span class="file-tag">{r[2]}</span>' for r in file_results)
-                display = f"{tags}<br>{display}" if display else tags
+                tags = ", ".join(r[2] for r in file_results)
+                display = f"[{tags}] {display}" if display else f"[{tags}]"
 
             # 메시지 추가
             st.session_state.messages.append({
@@ -614,7 +592,7 @@ if send and (question.strip() or uploaded_files):
                 "display": display,
             })
 
-            # API 메시지 구성 (전체 대화 맥락 유지)
+            # API 메시지 (전체 대화 맥락)
             api_msgs = []
             for i, m in enumerate(st.session_state.messages):
                 if i == len(st.session_state.messages) - 1 and m["role"] == "user":
@@ -653,7 +631,7 @@ if send and (question.strip() or uploaded_files):
 
             # DB 저장
             save_message(uid, "user",
-                         question.strip() if question.strip() else "[파일 첨부]",
+                         display if display else "[파일 첨부]",
                          sel_model, 0, 0, st.session_state.current_session)
             save_message(uid, "assistant", answer,
                          sel_model, inp, out, st.session_state.current_session)
@@ -672,7 +650,7 @@ if send and (question.strip() or uploaded_files):
 elif send:
     st.warning("메시지를 입력하거나 파일을 첨부해주세요!")
 
-# 하단 안내
+# 하단
 st.markdown("""
 <div style="text-align:center;color:#4a5568;font-size:0.75rem;padding:0.5rem 0;">
     Claude AI 학습 도우미 · 학습 관련 질문을 해주세요
