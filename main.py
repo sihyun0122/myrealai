@@ -370,12 +370,12 @@ except Exception:
     st.stop()
 
 MODEL_OPTIONS = {
-    "Sonnet 4 ⚡ 빠른 응답": "claude-sonnet-4-20250514",
-    "Opus 4 🧠 최고 성능": "claude-opus-4-20250514",
+    "Sonnet 4.6 ⚡ 빠른 응답": "claude-sonnet-4-6",
+    "Opus 4.7 🚀 최고 성능": "claude-opus-4-7",
 }
 MODEL_PRICING = {
-    "claude-sonnet-4-20250514": {"input": 3.0, "output": 15.0},
-    "claude-opus-4-20250514": {"input": 15.0, "output": 75.0},
+    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
+    "claude-opus-4-7": {"input": 15.0, "output": 75.0},
 }
 
 # ==============================================================
